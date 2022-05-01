@@ -1,0 +1,115 @@
+import time
+from time import sleep
+from motor import Motor
+from machine import Pin, PVM
+from machine import I2C, Pin
+from APDS9960LITE import APDS9960LITE
+from Ultrasonic import sonic
+
+pwm = PWM(Pin(15))      # pvm is the power output of the motor as a percentage
+pwm.freq(50)
+
+
+def setServoAngle(angle):   # defining the angle of which the ultrasonic sensor observes
+    position = int(8000*(angle/180) + 1000) # 180 degree angle rotation
+    pwm.duty_u16(position)
+
+# Infrared sensor (black and white surface)
+IR_sensor = Pin(26, Pin.IN) # infrared sensor connected to Pin 26
+
+TRIG = 3    # trig sensor connects into Pin 3 (rotates the Ultrasonic sensor)
+ECHO = 2    # echo sensor connects into Pin 2 (finds the closest distance within the angle)
+ultrasonic_sensor = sonic(TRIG, ECHO)
+motor_left = Motor("left", 11, 10, 7)   # left motor connects to Pins 11,10,7
+motor_right = Motor("right", 8, 9, 6)   # right motor connects to Pins 8,9,6
+
+closest_distance = 150  # the robot cannot reach a distance closer than 150mm to a wall
+
+time.sleep(10) # the robot will initially be stationary for the first 10 seconds of activation
+
+while IR_sensor.value() == 0:   # white surface
+    dist = ultrasonic_sensor.distance_mm()
+
+    mindist = 1     # the infrared sensor detecting a black surface
+
+    for pos in range(50, 130, 5): # sweep angle
+        mindist = dist
+        setServoAngle(pos)
+        time.sleep(0.01)
+        if mindist > dist:
+            mindist = dist
+
+
+    for pos in range(130, 50, -5): # sweep angle
+        setServoAngle(pos)
+        time.sleep(0.01)
+        if mindist > dist:
+            mindist = dist
+
+    if mindist <= 150: # robot too close to wall
+        motor_left.set_backwards() # left motor backwards
+        motor_left.duty(50)        # left motor moving at 50% pvm
+
+        motor_right.set_backwards() # right motor backwards
+        motor_right.duty(50)        # right motor moving at 50% pvm
+
+        time.sleep(1) # robot in motion for 1 second
+
+        motor_left.set_forwards() # left motor forwards
+        motor_left.duty(50)     # left motor at 50% pvm
+
+        motor_right.set_backwards() # right motor backwards
+        motor_right.duty(50)    # right motor at 50% pvm
+
+        time.sleep(1) # robot in motion for 1 second
+
+        motor_left.duty(0) # stops left motor
+        motor_right.duty(0) # stops right motor
+
+
+    if mindist > 150: # robot far from wall
+        motor_left.set_forwards() # left motor forwards
+        motor_left.duty(50) # left motor at 50% pvm
+
+        motor_right.set_forwards() # right motor forwards
+        motor_right.duty(50) # right motor at 50% pvm
+
+        time.sleep(0.1) # in motion for 0.1 seconds
+
+        motor_left.duty(0) # stops left motor
+        motor_right.duty(0) # stops right motor
+
+# Initialise I2C
+i2c = I2C(0, scl=Pin(17), sda=Pin(16))
+# Initialise APDS9960
+apds9960=APDS9960LITE(i2c)      # Create APDS9960 sensor object
+apds9960.prox.enableSensor()    # Send I2C command to enable sensor
+sleep(0.1)  # Let sensor measurement stabilise before starting loop
+
+sonic
+
+for i in range(100):     # Take 100 measurements
+    proximity_measurement = apds9960.prox.proximityLevel # Read the proximity value
+    ultrasonic_measurement_mm = 1.0
+    print("{:3d}, {:4.2f}".format(proximity_measurement,ultrasonic_measurement_mm))
+    sleep(0.2)  # Wait for measurement to be ready
+
+print("Experiment finished! Please restart processor to repeat")
+
+import matplotlib.pyplot as plt
+import distance_csv_text
+
+apds9960 = []
+ultrasonic = []
+
+with open('distance_csv_text','r') as csvfile:
+    plotdata = csv.reader(csvfile, delimiter=',')
+    for row in plotdata:
+        apds9960.append(int(row[0]))
+        ultrasonic.append(int(row[1]))
+
+plt.plot(ultrasonic, apds9960, marker='o')
+plt.title("APDS9960 vs Ultrasonic sensor")
+plt.xlabel("Ultrasonic distance [mm]")
+plt.ylabel("APDS9960 distance [no units]")
+plt.show()
